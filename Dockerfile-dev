@@ -1,0 +1,12 @@
+FROM eclipse-temurin:17-jre-focal AS runtime
+
+RUN mkdir -p /app/truststore
+COPY ./fullchain.pem /app/truststore
+# Set the working directory for the runtime container
+WORKDIR /app
+
+# Copy the built JAR file from the main app build stage
+COPY  ./target/ai-agents-0.0.1-SNAPSHOT.jar /app/ai-agents-0.0.1-SNAPSHOT.jar
+
+# Command to run the app
+ENTRYPOINT ["java", "-jar","-Dspring.profiles.active=dev,jdbc","/app/ai-agents-0.0.1-SNAPSHOT.jar"]

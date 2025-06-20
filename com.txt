@@ -1,0 +1,79 @@
+# ===============================================================
+#                      PREVIOUS COMMANDS
+# ===============================================================
+
+# --- Start Elasticsearch in Docker ---
+# This will start a new container named 'es01'.
+# If you already have one, you can start it with 'docker start es01'
+# or remove it with 'docker rm -f es01' before running this command.
+docker run -d --name es01 -p 9200:9200 -e "discovery.type=single-node" -e "xpack.security.enabled=false" elasticsearch:8.11.1
+
+
+# --- Wait for Elasticsearch to be ready ---
+# The command below will poll Elasticsearch until it's healthy.
+# This is a bash command (for Git Bash, WSL, Linux, macOS).
+# It avoids the race condition between the app and the database.
+echo "Waiting for Elasticsearch to become available..."
+until curl -s "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=1s" | grep -q '"status":"yellow"\|"status":"green"'; do
+    printf "."
+    sleep 5
+done
+echo "Elasticsearch is ready!"
+
+
+# ===============================================================
+#                 APPLICATION RUN INSTRUCTIONS
+# ===============================================================
+# Run these commands in order from your terminal.
+# This assumes you have Docker and Maven installed.
+# ---------------------------------------------------------------
+
+# 1. Stop the currently running application
+# Press Ctrl+C in the terminal where the Spring Boot app is running.
+
+# 2. Clean and Restart the Spring Boot Application
+# The 'clean' command deletes old compiled code, forcing a fresh build.
+# This will resolve the stale linter/compiler errors.
+mvn clean spring-boot:run -Dspring-boot.run.profiles=local
+
+
+# --- Extract Content from a PDF ---
+curl -X GET "http://localhost:7979/ai-agent/blog-manager/extract-blog-content?url=https://www.cisa.gov/sites/default/files/publications/Joint-CISA-FBI-NSA_CSA_AA21-291A_BlackMatter_Ransomware.pdf"
+
+# --- Add a Parent Blog for Scanning ---
+curl -X POST http://localhost:7979/ai-agent/blog-manager/add-parent-blog -H "Content-Type: application/json" -d "{\"parentUrl\": \"https://thedfirreport.com/\", \"scanIntervalHours\": 24}"
+
+# --- Trigger a Scan for a Parent Blog ---
+curl -X POST http://localhost:7979/ai-agent/blog-manager/trigger-scan -H "Content-Type: application/json" -d "{\"parentUrl\": \"https://thedfirreport.com/\", \"parentUid\": \"3e19bfd1-834e-4c41-b8ab-b5eb6032455c\"}"
+
+# --- Delete Elasticsearch Indices ---
+# Useful for starting with a clean slate. Run when the app is stopped.
+curl -X DELETE "http://localhost:9200/article_scrape_status"
+curl -X DELETE "http://localhost:9200/parent_blog_schedules"
+curl -X DELETE "http://localhost:9200/threat-intel"
+
+# --- View One Document from Each Index ---
+# Add &size=1 to only fetch a single document from the index
+curl -X GET "http://localhost:9200/article_scrape_status/_search?pretty&size=1"
+
+curl -X GET "http://localhost:9200/parent_blog_schedules/_search?pretty&size=1"
+
+curl -X GET "http://localhost:9200/threat-intel/_search?pretty&size=1"
+
+# --- Count FAILED Articles ---
+curl -X GET "http://localhost:9200/article_scrape_status/_count?pretty" -H "Content-Type: application/json" -d'{"query":{"term":{"scrapeStatus":"FAILED"}}}'
+
+# --- Count SUCCESS Articles ---
+curl -X GET "http://localhost:9200/article_scrape_status/_count?pretty" -H "Content-Type: application/json" -d'{"query":{"term":{"scrapeStatus":"SUCCESS"}}}'
+
+# --- get child by parent
+curl -X GET "http://localhost:7979/ai-agent/blog-manager/child-blogs/3e19bfd1-834e-4c41-b8ab-b5eb6032455c"
+
+
+curl -X GET "http://localhost:9200/article_scrape_status/_search?pretty" -H "Content-Type: application/json" -d'{
+  "size": 100,
+  "_source": ["articleUrl", "scrapeStatus", "failureCount", "createdAtUtc", "updatedAtUtc", "parentUid"],
+  "sort": [{"createdAtUtc": {"order": "desc"}}]
+}'
+
+https://connormcgarr.github.io/

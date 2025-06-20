@@ -1,0 +1,93 @@
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# This workflow will build a Java project with Gradle and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle
+
+name: ai-agent service - Dev
+
+on:
+  push:
+    branches: [ "develop" ]
+  pull_request:
+    branches: [ "develop" ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Checkout Common Platform Repository
+      uses: actions/checkout@v4
+      with:
+        repository: gambitcyberorg/common-platform
+        ref: develop
+        ssh-key: ${{ secrets.SECRET_KEY_COMMON_PLATFORM }}
+
+    - name: Build Dependency with Maven
+      run: |
+        mvn -B clean install || (echo "Dependency build failed" && exit 1)     
+
+    - name: Checkout Main Repository
+      uses: actions/checkout@v2
+
+    # Configure Gradle for optimal use in GitHub Actions, including caching of downloaded dependencies.
+    # See: https://github.com/gradle/actions/blob/main/setup-gradle/README.md
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.0.0
+
+    - name: Build with Maven
+      run: |
+          mvn -B clean install package --file pom.xml -Dmaven.test.skip=true 
+
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_DEV }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}
+        aws-region: ${{ secrets.AWS_REGION_DEV }}
+
+    - name: Login to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build Docker Image
+      run: |
+        ECR_REPOSITORY_NAME="ai-agent-dev"
+        docker build --tag ai-agent-dev:latest -f Dockerfile-dev .
+
+    - name: Tag and Push Docker Image
+      run: |
+        docker tag ai-agent-dev:latest ${{ secrets.AWS_ACCOUNT_ID_DEV }}.dkr.ecr.${{ secrets.AWS_REGION_DEV }}.amazonaws.com/ai-agent-dev:latest
+        docker push ${{ secrets.AWS_ACCOUNT_ID_DEV }}.dkr.ecr.${{ secrets.AWS_REGION_DEV }}.amazonaws.com/ai-agent-dev:latest
+
+      # Update kubeconfig for EKS
+    - name: Update kubeconfig for AWS EKS
+      run: |
+        aws eks update-kubeconfig --name gambitcyber-EKS-dev --region ${{ secrets.AWS_REGION_DEV }}
+
+      # Rollout Restart Kubernetes Deployment
+    - name: Rollout Restart Kubernetes Deployment
+      run: |
+        kubectl rollout restart deploy ai-agent-api -n dev
+    
+
+    # NOTE: The Gradle Wrapper is the default and recommended way to run Gradle (https://docs.gradle.org/current/userguide/gradle_wrapper.html).
+    # If your project does not have the Gradle Wrapper configured, you can use the following configuration to run Gradle with a specified version.
+    #
+    # - name: Setup Gradle
+    #   uses: gradle/actions/setup-gradle@af1da67850ed9a4cedd57bfd976089dd991e2582 # v4.0.0
+    #   with:
+    #     gradle-version: '8.9'
+    #
+    # - name: Build with Gradle 8.9
+    #   run: gradle build
+
